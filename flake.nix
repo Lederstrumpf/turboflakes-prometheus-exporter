@@ -45,37 +45,39 @@
         let
           cfg = config.services.turboflakes-monitor;
 
-          validatorOpts = { ... }: {
-            options = {
-              address = mkOption {
-                type = types.str;
-                description = "Validator address to monitor";
-              };
+          validatorOpts =
+            { ... }:
+            {
+              options = {
+                address = mkOption {
+                  type = types.str;
+                  description = "Validator address to monitor";
+                };
 
-              port = mkOption {
-                type = types.port;
-                description = "Port for metrics endpoint";
-              };
+                port = mkOption {
+                  type = types.port;
+                  description = "Port for metrics endpoint";
+                };
 
-              network = mkOption {
-                type = types.str;
-                default = "polkadot";
-                description = "Network to monitor (polkadot, kusama, etc.)";
-              };
+                network = mkOption {
+                  type = types.str;
+                  default = "polkadot";
+                  description = "Network to monitor (polkadot, kusama, etc.)";
+                };
 
-              apiEndpoint = mkOption {
-                type = types.nullOr types.str;
-                default = null;
-                description = "API endpoint to scrape (overrides network setting)";
-              };
+                apiEndpoint = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  description = "API endpoint to scrape (overrides network setting)";
+                };
 
-              scrapeInterval = mkOption {
-                type = types.int;
-                default = 10;
-                description = "Scrape interval in seconds";
+                scrapeInterval = mkOption {
+                  type = types.int;
+                  default = 10;
+                  description = "Scrape interval in seconds";
+                };
               };
             };
-          };
 
           buildApiEndpoint =
             validatorCfg:

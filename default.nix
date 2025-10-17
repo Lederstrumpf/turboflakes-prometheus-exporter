@@ -1,4 +1,6 @@
-{ pkgs ? import <nixpkgs> { } }:
+{
+  pkgs ? import <nixpkgs> { },
+}:
 
 let
   clojure-data-json = pkgs.fetchMavenArtifact {
@@ -67,21 +69,21 @@ pkgs.stdenv.mkDerivation rec {
     # Extract all dependencies into a single directory
     mkdir -p jar-contents
     cd jar-contents
-    
+
     ${pkgs.jdk}/bin/jar xf ${clojure-core}/share/java/clojure-*.jar
     ${pkgs.jdk}/bin/jar xf ${clojure-spec-alpha}/share/java/spec.alpha-*.jar
     ${pkgs.jdk}/bin/jar xf ${clojure-core-specs-alpha}/share/java/core.specs.alpha-*.jar
     ${pkgs.jdk}/bin/jar xf ${clojure-data-json}/share/java/data.json-*.jar
-    
+
     # Remove signature files that can cause issues
     rm -rf META-INF/*.SF META-INF/*.DSA META-INF/*.RSA
-    
+
     # Copy compiled classes and source
     cp -r ../target/classes/* .
-    
+
     # Create the final JAR
     ${pkgs.jdk}/bin/jar cfe ../turboflakes-monitor.jar turboflakes_monitor.core .
-    
+
     cd ..
   '';
 
