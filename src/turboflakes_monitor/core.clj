@@ -1,4 +1,4 @@
-(ns turboflakes-monitor
+(ns turboflakes-monitor.core
   (:require [clojure.java.shell :as shell]
             [clojure.data.json :as json]
             [clojure.string :as str])
