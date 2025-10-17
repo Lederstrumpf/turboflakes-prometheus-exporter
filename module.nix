@@ -17,10 +17,16 @@ let
         description = "Port for metrics endpoint";
       };
       
-      apiEndpoint = mkOption {
+      network = mkOption {
         type = types.str;
-        default = "https://polkadot-onet-api.turboflakes.io/api/v1/validators/${name}/grade";
-        description = "API endpoint to scrape";
+        default = "polkadot";
+        description = "Network to monitor (polkadot, kusama, etc.)";
+      };
+      
+      apiEndpoint = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "API endpoint to scrape (overrides network setting)";
       };
       
       scrapeInterval = mkOption {
@@ -30,6 +36,11 @@ let
       };
     };
   };
+  
+  buildApiEndpoint = validatorCfg:
+    if validatorCfg.apiEndpoint != null
+    then validatorCfg.apiEndpoint
+    else "https://${validatorCfg.network}-onet-api.turboflakes.io/api/v1/validators/${validatorCfg.address}/grade";
 in
 {
   options.services.turboflakes-monitor = {
@@ -49,10 +60,12 @@ in
           validator1 = {
             address = "16A4n4UQqgxw5ndeehPjUAobDNmuX2bBoPXVKj4xTe16ktRN";
             port = 8090;
+            network = "polkadot";
           };
           validator2 = {
             address = "xyz123...";
             port = 8091;
+            network = "kusama";
           };
         }
       '';
@@ -62,13 +75,13 @@ in
   config = mkIf cfg.enable {
     systemd.services = mapAttrs' (name: validatorCfg:
       nameValuePair "turboflakes-monitor-${name}" {
-        description = "TurboFlakes Monitor for ${name}";
+        description = "TurboFlakes Monitor for ${name} on ${validatorCfg.network}";
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
         
         environment = {
-          API_ENDPOINT = validatorCfg.apiEndpoint;
+          API_ENDPOINT = buildApiEndpoint validatorCfg;
           METRICS_PORT = toString validatorCfg.port;
           SCRAPE_INTERVAL = toString validatorCfg.scrapeInterval;
         };

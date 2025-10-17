@@ -13,26 +13,39 @@
     enable = true;
     
     validators = {
-      validator1 = {
+      polkadot-validator1 = {
         address = "16A4n4UQqgxw5ndeehPjUAobDNmuX2bBoPXVKj4xTe16ktRN";
         port = 8090;
+        network = "polkadot";
       };
       
-      validator2 = {
-        address = "AnotherValidatorAddress123";
+      polkadot-validator2 = {
+        address = "AnotherPolkadotAddress123";
         port = 8091;
+        network = "polkadot";
       };
       
-      validator3 = {
-        address = "YetAnotherValidator456";
+      kusama-validator1 = {
+        address = "KusamaValidatorAddress456";
         port = 8092;
-        scrapeInterval = 15;  # Override default
+        network = "kusama";
       };
       
-      # Add up to 12 validators...
+      kusama-validator2 = {
+        address = "AnotherKusamaAddress789";
+        port = 8093;
+        network = "kusama";
+        scrapeInterval = 15;
+      };
+      
+      custom-validator = {
+        address = "CustomAddress";
+        port = 8094;
+        network = "polkadot";
+        apiEndpoint = "https://custom-api.example.com/api/v1/validators/CustomAddress/grade";
+      };
     };
   };
   
-  # Optional: Open firewall ports for Prometheus scraping
-  networking.firewall.allowedTCPPorts = [ 8090 8091 8092 ];
+  networking.firewall.allowedTCPPorts = [ 8090 8091 8092 8093 8094 ];
 }
