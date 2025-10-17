@@ -152,7 +152,7 @@
       (scrape)
       (catch Exception e
         (println "Error in background scrape:" (.getMessage e))))
-    (Thread/sleep (* @scrape-interval 1000))))
+    (Thread/sleep (long (* @scrape-interval 1000)))))
 
 (defn parse-args [args]
   (loop [args args
@@ -214,7 +214,7 @@
         (.setDaemon scrape-thread true)
         (.start scrape-thread)
         (start-server)
-        (while true (Thread/sleep 1000))))
+        (while true (Thread/sleep (long 1000)))))
     (catch Exception e
       (println "Fatal error:" (.getMessage e))
       (.printStackTrace e)
