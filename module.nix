@@ -102,13 +102,6 @@ in
           ProtectKernelTunables = true;
           ProtectKernelModules = true;
           ProtectControlGroups = true;
-          
-          # Clojure needs a writable cache directory
-          StateDirectory = "turboflakes-monitor-${name}";
-          Environment = [
-            "HOME=/var/lib/turboflakes-monitor-${name}"
-            "CLJ_CONFIG=/var/lib/turboflakes-monitor-${name}/.clojure"
-          ];
         };
       }
     ) cfg.validators;

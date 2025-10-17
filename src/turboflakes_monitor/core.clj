@@ -4,7 +4,8 @@
             [clojure.string :as str])
   (:import [com.sun.net.httpserver HttpServer HttpHandler HttpExchange]
            [java.net InetSocketAddress]
-           [java.util.concurrent Executors TimeUnit]))
+           [java.util.concurrent Executors TimeUnit])
+  (:gen-class))
 
 ;; Configuration (will be set from CLI args)
 (def api-endpoint (atom nil))
