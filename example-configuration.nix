@@ -47,6 +47,7 @@
     };
   };
 
+  # if scraping via a remote instance
   networking.firewall.allowedTCPPorts = [
     8090
     8091

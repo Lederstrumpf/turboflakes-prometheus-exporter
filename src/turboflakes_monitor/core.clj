@@ -68,7 +68,7 @@
         uptime (/ (- (System/currentTimeMillis) start-time) 1000)
         lines (transient [])]
 
-    ;; Extract string values as labels (except grade and address)
+    ;; Extract string values as labels (except grade)
     (let [string-labels (into {}
                               (comp
                                (filter (fn [[k v]] (and (string? v)
