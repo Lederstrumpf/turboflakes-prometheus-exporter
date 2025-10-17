@@ -1,8 +1,8 @@
-{
-  pkgs ? import <nixpkgs> { },
-}:
+{ pkgs ? import <nixpkgs> { } }:
 
 let
+  graalvm = pkgs.graalvm-ce;
+  
   clojure-data-json = pkgs.fetchMavenArtifact {
     groupId = "org.clojure";
     artifactId = "data.json";
@@ -46,12 +46,13 @@ pkgs.stdenv.mkDerivation rec {
   src = ./.;
 
   nativeBuildInputs = with pkgs; [
-    jdk
+    graalvm
     makeWrapper
   ];
 
   buildInputs = with pkgs; [
     curl
+    zlib
   ];
 
   buildPhase = ''
@@ -59,41 +60,78 @@ pkgs.stdenv.mkDerivation rec {
 
     # Compile the Clojure code
     mkdir -p target/classes
-
-    # Copy source files to target for compilation
     cp -r src/* target/classes/
 
-    # Use clojure.main to compile with source in classpath
-    ${pkgs.jdk}/bin/java -cp "${classpath}:target/classes" clojure.main -e "(binding [*compile-path* \"target/classes\"] (compile 'turboflakes-monitor.core))"
+    ${graalvm}/bin/java -cp "${classpath}:target/classes" clojure.main -e "(binding [*compile-path* \"target/classes\"] (compile 'turboflakes-monitor.core))"
 
-    # Extract all dependencies into a single directory
+    # Extract all dependencies
     mkdir -p jar-contents
     cd jar-contents
-
-    ${pkgs.jdk}/bin/jar xf ${clojure-core}/share/java/clojure-*.jar
-    ${pkgs.jdk}/bin/jar xf ${clojure-spec-alpha}/share/java/spec.alpha-*.jar
-    ${pkgs.jdk}/bin/jar xf ${clojure-core-specs-alpha}/share/java/core.specs.alpha-*.jar
-    ${pkgs.jdk}/bin/jar xf ${clojure-data-json}/share/java/data.json-*.jar
-
-    # Remove signature files that can cause issues
+    
+    ${graalvm}/bin/jar xf ${clojure-core}/share/java/clojure-*.jar
+    ${graalvm}/bin/jar xf ${clojure-spec-alpha}/share/java/spec.alpha-*.jar
+    ${graalvm}/bin/jar xf ${clojure-core-specs-alpha}/share/java/core.specs.alpha-*.jar
+    ${graalvm}/bin/jar xf ${clojure-data-json}/share/java/data.json-*.jar
+    
     rm -rf META-INF/*.SF META-INF/*.DSA META-INF/*.RSA
-
-    # Copy compiled classes and source
     cp -r ../target/classes/* .
-
-    # Create the final JAR
-    ${pkgs.jdk}/bin/jar cfe ../turboflakes-monitor.jar turboflakes_monitor.core .
-
+    
+    ${graalvm}/bin/jar cfe ../turboflakes-monitor.jar turboflakes_monitor.core .
     cd ..
+
+    # Create reflection configuration
+    mkdir -p META-INF/native-image
+    cat > META-INF/native-image/reflect-config.json <<EOF
+    [
+      {
+        "name": "com.sun.net.httpserver.HttpServer",
+        "allDeclaredConstructors": true,
+        "allPublicConstructors": true,
+        "allDeclaredMethods": true,
+        "allPublicMethods": true
+      },
+      {
+        "name": "com.sun.net.httpserver.HttpExchange",
+        "allDeclaredMethods": true,
+        "allPublicMethods": true
+      },
+      {
+        "name": "com.sun.net.httpserver.HttpHandler",
+        "allDeclaredMethods": true,
+        "allPublicMethods": true
+      },
+      {
+        "name": "java.net.InetSocketAddress",
+        "allDeclaredConstructors": true,
+        "allPublicConstructors": true
+      },
+      {
+        "name": "java.util.concurrent.Executors",
+        "allDeclaredMethods": true,
+        "allPublicMethods": true
+      }
+    ]
+    EOF
+
+    # Build native image
+    ${graalvm}/bin/native-image \
+      --no-fallback \
+      --initialize-at-build-time \
+      --report-unsupported-elements-at-runtime \
+      -H:+ReportExceptionStackTraces \
+      -H:ReflectionConfigurationFiles=META-INF/native-image/reflect-config.json \
+      --allow-incomplete-classpath \
+      --verbose \
+      -jar turboflakes-monitor.jar \
+      turboflakes-monitor
   '';
 
   installPhase = ''
-    mkdir -p $out/bin $out/share/java
+    mkdir -p $out/bin
 
-    cp turboflakes-monitor.jar $out/share/java/
+    cp turboflakes-monitor $out/bin/
 
-    makeWrapper ${pkgs.jdk}/bin/java $out/bin/turboflakes-monitor \
-      --add-flags "-jar $out/share/java/turboflakes-monitor.jar" \
+    wrapProgram $out/bin/turboflakes-monitor \
       --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.curl ]}
   '';
 
@@ -101,6 +139,5 @@ pkgs.stdenv.mkDerivation rec {
     description = "Prometheus exporter for TurboFlakes validator metrics";
     license = licenses.mit;
     platforms = platforms.linux;
-    maintainers = [ ];
   };
 }

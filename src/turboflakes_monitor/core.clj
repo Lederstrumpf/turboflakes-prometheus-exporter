@@ -22,7 +22,9 @@
     (when (zero? exit)
       (try
         (json/read-str out :key-fn keyword)
-        (catch Exception _ nil)))))
+        (catch Exception e
+          (println "Error parsing JSON:" (.getMessage e))
+          nil)))))
 
 (defn scrape []
   (let [now (/ (System/currentTimeMillis) 1000)]
@@ -114,18 +116,25 @@
     (str/join (persistent! lines))))
 
 (defn metrics-handler [^HttpExchange exchange]
-  (scrape)
-  (let [response (generate-metrics)
-        headers (.getResponseHeaders exchange)]
-    (.add headers "Content-Type" "text/plain; version=0.0.4")
-    (.sendResponseHeaders exchange 200 (count (.getBytes response)))
-    (doto (.getResponseBody exchange)
-      (.write (.getBytes response))
-      (.close))))
+  (try
+    (scrape)
+    (let [response (generate-metrics)
+          headers (.getResponseHeaders exchange)]
+      (.add headers "Content-Type" "text/plain; version=0.0.4")
+      (.sendResponseHeaders exchange 200 (count (.getBytes response)))
+      (doto (.getResponseBody exchange)
+        (.write (.getBytes response))
+        (.close)))
+    (catch Exception e
+      (println "Error in metrics handler:" (.getMessage e))
+      (.printStackTrace e))))
 
 (defn root-handler [^HttpExchange exchange]
-  (.sendResponseHeaders exchange 404 0)
-  (.close (.getResponseBody exchange)))
+  (try
+    (.sendResponseHeaders exchange 404 0)
+    (.close (.getResponseBody exchange))
+    (catch Exception e
+      (println "Error in root handler:" (.getMessage e)))))
 
 (defn start-server []
   (let [server (HttpServer/create (InetSocketAddress. @metrics-port) 0)
@@ -139,7 +148,10 @@
 
 (defn background-scrape []
   (while true
-    (scrape)
+    (try
+      (scrape)
+      (catch Exception e
+        (println "Error in background scrape:" (.getMessage e))))
     (Thread/sleep (* @scrape-interval 1000))))
 
 (defn parse-args [args]
@@ -176,29 +188,34 @@
   (println "  -h, --help            Show this help message"))
 
 (defn -main [& args]
-  (let [opts (parse-args args)]
-    (when (:help opts)
-      (print-usage)
-      (System/exit 0))
+  (try
+    (let [opts (parse-args args)]
+      (when (:help opts)
+        (print-usage)
+        (System/exit 0))
 
-    (when-not (:endpoint opts)
-      (println "Error: --endpoint is required")
+      (when-not (:endpoint opts)
+        (println "Error: --endpoint is required")
+        (println "")
+        (print-usage)
+        (System/exit 1))
+
+      (reset! api-endpoint (:endpoint opts))
+      (reset! metrics-port (or (:port opts) 8090))
+      (reset! scrape-interval (or (:interval opts) 10))
+
+      (println "Configuration:")
+      (println "  Endpoint:" @api-endpoint)
+      (println "  Port:" @metrics-port)
+      (println "  Interval:" @scrape-interval "seconds")
       (println "")
-      (print-usage)
-      (System/exit 1))
 
-    (reset! api-endpoint (:endpoint opts))
-    (reset! metrics-port (or (:port opts) 8090))
-    (reset! scrape-interval (or (:interval opts) 10))
-
-    (println "Configuration:")
-    (println "  Endpoint:" @api-endpoint)
-    (println "  Port:" @metrics-port)
-    (println "  Interval:" @scrape-interval "seconds")
-    (println "")
-
-    (let [scrape-thread (Thread. ^Runnable background-scrape)]
-      (.setDaemon scrape-thread true)
-      (.start scrape-thread)
-      (start-server)
-      (while true (Thread/sleep 1000)))))
+      (let [scrape-thread (Thread. ^Runnable background-scrape)]
+        (.setDaemon scrape-thread true)
+        (.start scrape-thread)
+        (start-server)
+        (while true (Thread/sleep 1000))))
+    (catch Exception e
+      (println "Fatal error:" (.getMessage e))
+      (.printStackTrace e)
+      (System/exit 1))))
