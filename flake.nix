@@ -71,7 +71,7 @@
           cfg = config.services.turboflakes-monitor;
 
           validatorOpts =
-            { name, ... }:
+            { ... }:
             {
               options = {
                 address = mkOption {
