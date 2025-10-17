@@ -36,30 +36,80 @@
 (defn json-key-to-metric-name [k]
   (str "turboflakes_" (name k)))
 
+(defn escape-label-value [s]
+  (-> s
+      (str/replace "\\" "\\\\")
+      (str/replace "\"" "\\\"")
+      (str/replace "\n" "\\n")))
+
+(defn grade-to-numeric [grade-str]
+  (when (string? grade-str)
+    (let [grade-str (str/upper-case (str/trim grade-str))
+          has-plus (str/ends-with? grade-str "+")
+          base-grade (if has-plus
+                       (subs grade-str 0 (dec (count grade-str)))
+                       grade-str)
+          base-value (case base-grade
+                       "F" 1.0
+                       "E" 2.0
+                       "D" 3.0
+                       "C" 4.0
+                       "B" 5.0
+                       "A" 6.0
+                       nil)]
+      (when base-value
+        (if has-plus
+          (+ base-value 0.5)
+          base-value)))))
+
 (defn generate-metrics []
   (let [data @metrics
         scrape-duration (- (/ (System/currentTimeMillis) 1000) @last-scrape)
         uptime (/ (- (System/currentTimeMillis) start-time) 1000)
         lines (transient [])]
 
-    ;; RAW JSON KEYS → METRICS (EXACT VALUES)
-    (doseq [[k v] data]
-      (let [metric-name (json-key-to-metric-name k)]
-        (cond
-          (string? v)
-          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} \"" v "\"\n"))
-          (number? v)
-          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} " v "\n"))
-          (true? v)
-          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} 1\n"))
-          (false? v)
-          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} 0\n"))
-          (vector? v)
-          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} " (count v) "\n")))))
+    ;; Extract string values as labels (except grade and address)
+    (let [string-labels (into {}
+                              (comp
+                               (filter (fn [[k v]] (and (string? v)
+                                                        (not= k :grade))))
+                               (map (fn [[k v]] [(name k) (escape-label-value v)])))
+                              data)
+          base-labels (str "endpoint=\"" (escape-label-value @api-endpoint) "\"")
+          all-labels (if (seq string-labels)
+                       (str base-labels ","
+                            (str/join ","
+                                      (map (fn [[k v]]
+                                             (str k "=\"" v "\""))
+                                           string-labels)))
+                       base-labels)]
 
-    ;; Scrape info
-    (conj! lines (str "turboflakes_monitor_scrape_duration_seconds{endpoint=\"" @api-endpoint "\"} " (format "%.3f" (double scrape-duration)) "\n"))
-    (conj! lines (str "turboflakes_monitor_uptime_seconds{endpoint=\"" @api-endpoint "\"} " (int uptime) "\n"))
+      ;; RAW JSON KEYS → METRICS (NUMERIC VALUES ONLY)
+      (doseq [[k v] data]
+        (let [metric-name (json-key-to-metric-name k)]
+          (cond
+            (and (= k :grade) (string? v))
+            (when-let [numeric-grade (grade-to-numeric v)]
+              (conj! lines (str metric-name "{" all-labels ",grade_letter=\"" (escape-label-value v) "\"} " numeric-grade "\n")))
+
+            (= k :address)
+            nil  ; Skip address field entirely
+
+            (number? v)
+            (conj! lines (str metric-name "{" all-labels "} " v "\n"))
+
+            (true? v)
+            (conj! lines (str metric-name "{" all-labels "} 1\n"))
+
+            (false? v)
+            (conj! lines (str metric-name "{" all-labels "} 0\n"))
+
+            (vector? v)
+            (conj! lines (str metric-name "_count{" all-labels "} " (count v) "\n")))))
+
+      ;; Scrape info
+      (conj! lines (str "turboflakes_monitor_scrape_duration_seconds{" all-labels "} " (format "%.3f" (double scrape-duration)) "\n"))
+      (conj! lines (str "turboflakes_monitor_uptime_seconds{" all-labels "} " (int uptime) "\n")))
 
     (str/join (persistent! lines))))
 
@@ -101,16 +151,16 @@
         (cond
           (or (= arg "--endpoint") (= arg "-e"))
           (recur (drop 2 args) (assoc opts :endpoint (second args)))
-          
+
           (or (= arg "--port") (= arg "-p"))
           (recur (drop 2 args) (assoc opts :port (Integer/parseInt (second args))))
-          
+
           (or (= arg "--interval") (= arg "-i"))
           (recur (drop 2 args) (assoc opts :interval (Integer/parseInt (second args))))
-          
+
           (or (= arg "--help") (= arg "-h"))
           (recur (drop 1 args) (assoc opts :help true))
-          
+
           :else
           (recur (drop 1 args) opts))))))
 
@@ -130,23 +180,23 @@
     (when (:help opts)
       (print-usage)
       (System/exit 0))
-    
+
     (when-not (:endpoint opts)
       (println "Error: --endpoint is required")
       (println "")
       (print-usage)
       (System/exit 1))
-    
+
     (reset! api-endpoint (:endpoint opts))
     (reset! metrics-port (or (:port opts) 8090))
     (reset! scrape-interval (or (:interval opts) 10))
-    
+
     (println "Configuration:")
     (println "  Endpoint:" @api-endpoint)
     (println "  Port:" @metrics-port)
     (println "  Interval:" @scrape-interval "seconds")
     (println "")
-    
+
     (let [scrape-thread (Thread. ^Runnable background-scrape)]
       (.setDaemon scrape-thread true)
       (.start scrape-thread)
