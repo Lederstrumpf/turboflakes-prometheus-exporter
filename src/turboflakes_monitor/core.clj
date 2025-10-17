@@ -6,17 +6,17 @@
            [java.net InetSocketAddress]
            [java.util.concurrent Executors TimeUnit]))
 
-;; Configuration
-(def api-endpoint (or (System/getenv "API_ENDPOINT") "https://polkadot-onet-api.turboflakes.io/api/v1/validators/16A4n4UQqgxw5ndeehPjUAobDNmuX2bBoPXVKj4xTe16ktRN/grade"))
-(def metrics-port (Integer/parseInt (or (System/getenv "METRICS_PORT") "8090")))
-(def scrape-interval (Integer/parseInt (or (System/getenv "SCRAPE_INTERVAL") "10")))
+;; Configuration (will be set from CLI args)
+(def api-endpoint (atom nil))
+(def metrics-port (atom 8090))
+(def scrape-interval (atom 10))
 
 (def metrics (atom {}))
 (def last-scrape (atom 0))
 (def start-time (System/currentTimeMillis))
 
 (defn curl-api []
-  (let [cmd ["curl" "-s" "-m" "15" api-endpoint]
+  (let [cmd ["curl" "-s" "-m" "15" @api-endpoint]
         {:keys [exit out]} (apply shell/sh cmd)]
     (when (zero? exit)
       (try
@@ -25,7 +25,7 @@
 
 (defn scrape []
   (let [now (/ (System/currentTimeMillis) 1000)]
-    (when (>= (- now @last-scrape) scrape-interval)
+    (when (>= (- now @last-scrape) @scrape-interval)
       (reset! last-scrape now)
       (let [data (curl-api)]
         (reset! metrics data)
@@ -46,19 +46,19 @@
       (let [metric-name (json-key-to-metric-name k)]
         (cond
           (string? v)
-          (conj! lines (str metric-name "{endpoint=\"" api-endpoint "\"} \"" v "\"\n"))
+          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} \"" v "\"\n"))
           (number? v)
-          (conj! lines (str metric-name "{endpoint=\"" api-endpoint "\"} " v "\n"))
+          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} " v "\n"))
           (true? v)
-          (conj! lines (str metric-name "{endpoint=\"" api-endpoint "\"} 1\n"))
+          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} 1\n"))
           (false? v)
-          (conj! lines (str metric-name "{endpoint=\"" api-endpoint "\"} 0\n"))
+          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} 0\n"))
           (vector? v)
-          (conj! lines (str metric-name "{endpoint=\"" api-endpoint "\"} " (count v) "\n")))))
+          (conj! lines (str metric-name "{endpoint=\"" @api-endpoint "\"} " (count v) "\n")))))
 
     ;; Scrape info
-    (conj! lines (str "turboflakes_monitor_scrape_duration_seconds{endpoint=\"" api-endpoint "\"} " (format "%.3f" (double scrape-duration)) "\n"))
-    (conj! lines (str "turboflakes_monitor_uptime_seconds{endpoint=\"" api-endpoint "\"} " (int uptime) "\n"))
+    (conj! lines (str "turboflakes_monitor_scrape_duration_seconds{endpoint=\"" @api-endpoint "\"} " (format "%.3f" (double scrape-duration)) "\n"))
+    (conj! lines (str "turboflakes_monitor_uptime_seconds{endpoint=\"" @api-endpoint "\"} " (int uptime) "\n"))
 
     (str/join (persistent! lines))))
 
@@ -77,23 +77,77 @@
   (.close (.getResponseBody exchange)))
 
 (defn start-server []
-  (let [server (HttpServer/create (InetSocketAddress. metrics-port) 0)
+  (let [server (HttpServer/create (InetSocketAddress. @metrics-port) 0)
         executor (Executors/newFixedThreadPool 10)]
     (.createContext server "/metrics" (reify HttpHandler (handle [_ exchange] (metrics-handler exchange))))
     (.createContext server "/" (reify HttpHandler (handle [_ exchange] (root-handler exchange))))
     (.setExecutor server executor)
     (.start server)
-    (println "🚀 TurboFlakes Monitor (RAW JSON) on:" metrics-port)
-    (println "📊 http://localhost:" metrics-port "/metrics")))
+    (println "🚀 TurboFlakes Monitor (RAW JSON) on:" @metrics-port)
+    (println "📊 http://localhost:" @metrics-port "/metrics")))
 
 (defn background-scrape []
   (while true
     (scrape)
-    (Thread/sleep (* scrape-interval 1000))))
+    (Thread/sleep (* @scrape-interval 1000))))
+
+(defn parse-args [args]
+  (loop [args args
+         opts {}]
+    (if (empty? args)
+      opts
+      (let [arg (first args)]
+        (cond
+          (or (= arg "--endpoint") (= arg "-e"))
+          (recur (drop 2 args) (assoc opts :endpoint (second args)))
+          
+          (or (= arg "--port") (= arg "-p"))
+          (recur (drop 2 args) (assoc opts :port (Integer/parseInt (second args))))
+          
+          (or (= arg "--interval") (= arg "-i"))
+          (recur (drop 2 args) (assoc opts :interval (Integer/parseInt (second args))))
+          
+          (or (= arg "--help") (= arg "-h"))
+          (recur (drop 1 args) (assoc opts :help true))
+          
+          :else
+          (recur (drop 1 args) opts))))))
+
+(defn print-usage []
+  (println "Usage: turboflakes-monitor [OPTIONS]")
+  (println "")
+  (println "Required:")
+  (println "  -e, --endpoint URL    API endpoint to scrape (required)")
+  (println "")
+  (println "Optional:")
+  (println "  -p, --port PORT       Metrics server port (default: 8090)")
+  (println "  -i, --interval SEC    Scrape interval in seconds (default: 10)")
+  (println "  -h, --help            Show this help message"))
 
 (defn -main [& args]
-  (let [scrape-thread (Thread. ^Runnable background-scrape)]
-    (.setDaemon scrape-thread true)
-    (.start scrape-thread)
-    (start-server)
-    (while true (Thread/sleep 1000))))
+  (let [opts (parse-args args)]
+    (when (:help opts)
+      (print-usage)
+      (System/exit 0))
+    
+    (when-not (:endpoint opts)
+      (println "Error: --endpoint is required")
+      (println "")
+      (print-usage)
+      (System/exit 1))
+    
+    (reset! api-endpoint (:endpoint opts))
+    (reset! metrics-port (or (:port opts) 8090))
+    (reset! scrape-interval (or (:interval opts) 10))
+    
+    (println "Configuration:")
+    (println "  Endpoint:" @api-endpoint)
+    (println "  Port:" @metrics-port)
+    (println "  Interval:" @scrape-interval "seconds")
+    (println "")
+    
+    (let [scrape-thread (Thread. ^Runnable background-scrape)]
+      (.setDaemon scrape-thread true)
+      (.start scrape-thread)
+      (start-server)
+      (while true (Thread/sleep 1000)))))

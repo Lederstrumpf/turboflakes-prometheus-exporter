@@ -87,15 +87,9 @@ in
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
 
-        environment = {
-          API_ENDPOINT = buildApiEndpoint validatorCfg;
-          METRICS_PORT = toString validatorCfg.port;
-          SCRAPE_INTERVAL = toString validatorCfg.scrapeInterval;
-        };
-
         serviceConfig = {
           Type = "simple";
-          ExecStart = "${cfg.package}/bin/turboflakes-monitor";
+          ExecStart = "${cfg.package}/bin/turboflakes-monitor --endpoint ${buildApiEndpoint validatorCfg} --port ${toString validatorCfg.port} --interval ${toString validatorCfg.scrapeInterval}";
           Restart = "always";
           RestartSec = "10s";
 
@@ -108,6 +102,10 @@ in
           ProtectKernelTunables = true;
           ProtectKernelModules = true;
           ProtectControlGroups = true;
+          
+          # Clojure needs a writable cache directory
+          CacheDirectory = "turboflakes-monitor-${name}";
+          Environment = "CLJ_CACHE=%C/turboflakes-monitor-${name}";
         };
       }
     ) cfg.validators;
