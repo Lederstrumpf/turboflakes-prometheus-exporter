@@ -1,59 +1,68 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 with lib;
 
 let
   cfg = config.services.turboflakes-monitor;
-  
-  validatorOpts = { name, ... }: {
-    options = {
-      address = mkOption {
-        type = types.str;
-        description = "Validator address to monitor";
-      };
-      
-      port = mkOption {
-        type = types.port;
-        description = "Port for metrics endpoint";
-      };
-      
-      network = mkOption {
-        type = types.str;
-        default = "polkadot";
-        description = "Network to monitor (polkadot, kusama, etc.)";
-      };
-      
-      apiEndpoint = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        description = "API endpoint to scrape (overrides network setting)";
-      };
-      
-      scrapeInterval = mkOption {
-        type = types.int;
-        default = 10;
-        description = "Scrape interval in seconds";
+
+  validatorOpts =
+    { name, ... }:
+    {
+      options = {
+        address = mkOption {
+          type = types.str;
+          description = "Validator address to monitor";
+        };
+
+        port = mkOption {
+          type = types.port;
+          description = "Port for metrics endpoint";
+        };
+
+        network = mkOption {
+          type = types.str;
+          default = "polkadot";
+          description = "Network to monitor (polkadot, kusama, etc.)";
+        };
+
+        apiEndpoint = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = "API endpoint to scrape (overrides network setting)";
+        };
+
+        scrapeInterval = mkOption {
+          type = types.int;
+          default = 10;
+          description = "Scrape interval in seconds";
+        };
       };
     };
-  };
-  
-  buildApiEndpoint = validatorCfg:
-    if validatorCfg.apiEndpoint != null
-    then validatorCfg.apiEndpoint
-    else "https://${validatorCfg.network}-onet-api.turboflakes.io/api/v1/validators/${validatorCfg.address}/grade";
+
+  buildApiEndpoint =
+    validatorCfg:
+    if validatorCfg.apiEndpoint != null then
+      validatorCfg.apiEndpoint
+    else
+      "https://${validatorCfg.network}-onet-api.turboflakes.io/api/v1/validators/${validatorCfg.address}/grade";
 in
 {
   options.services.turboflakes-monitor = {
     enable = mkEnableOption "TurboFlakes validator monitor";
-    
+
     package = mkOption {
       type = types.package;
       description = "TurboFlakes monitor package to use";
     };
-    
+
     validators = mkOption {
       type = types.attrsOf (types.submodule validatorOpts);
-      default = {};
+      default = { };
       description = "Validators to monitor";
       example = literalExpression ''
         {
@@ -71,27 +80,28 @@ in
       '';
     };
   };
-  
+
   config = mkIf cfg.enable {
-    systemd.services = mapAttrs' (name: validatorCfg:
+    systemd.services = mapAttrs' (
+      name: validatorCfg:
       nameValuePair "turboflakes-monitor-${name}" {
         description = "TurboFlakes Monitor for ${name} on ${validatorCfg.network}";
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
-        
+
         environment = {
           API_ENDPOINT = buildApiEndpoint validatorCfg;
           METRICS_PORT = toString validatorCfg.port;
           SCRAPE_INTERVAL = toString validatorCfg.scrapeInterval;
         };
-        
+
         serviceConfig = {
           Type = "simple";
           ExecStart = "${cfg.package}/bin/turboflakes-monitor";
           Restart = "always";
           RestartSec = "10s";
-          
+
           # Hardening
           DynamicUser = true;
           NoNewPrivileges = true;
