@@ -119,15 +119,15 @@
   (try
     (scrape)
     (let [response (generate-metrics)
+          response-bytes (bytes (byte-array (map byte response)))
           headers (.getResponseHeaders exchange)]
       (.add headers "Content-Type" "text/plain; version=0.0.4")
-      (.sendResponseHeaders exchange 200 (count (.getBytes response)))
+      (.sendResponseHeaders exchange 200 (alength response-bytes))
       (doto (.getResponseBody exchange)
-        (.write (.getBytes response))
+        (.write response-bytes)
         (.close)))
     (catch Exception e
-      (println "Error in metrics handler:" (.getMessage e))
-      (.printStackTrace e))))
+      (println "Error in metrics handler:" (.getMessage e)))))
 
 (defn root-handler [^HttpExchange exchange]
   (try
@@ -217,5 +217,4 @@
         (while true (Thread/sleep (long 1000)))))
     (catch Exception e
       (println "Fatal error:" (.getMessage e))
-      (.printStackTrace e)
       (System/exit 1))))
