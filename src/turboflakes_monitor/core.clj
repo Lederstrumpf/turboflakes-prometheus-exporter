@@ -92,7 +92,7 @@
           (cond
             (and (= k :grade) (string? v))
             (when-let [numeric-grade (grade-to-numeric v)]
-              (conj! lines (str metric-name "{" all-labels ",grade_letter=\"" (escape-label-value v) "\"} " numeric-grade "\n")))
+              (conj! lines (str metric-name "{" all-labels "} " numeric-grade "\n")))
 
             (= k :address)
             nil  ; Skip address field entirely
