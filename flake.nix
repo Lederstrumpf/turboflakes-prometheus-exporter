@@ -17,26 +17,7 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-
-        turboflakes-monitor = pkgs.stdenv.mkDerivation {
-          pname = "turboflakes-monitor";
-          version = "0.1.0";
-          src = ./.;
-
-          buildInputs = [ pkgs.clojure ];
-
-          installPhase = ''
-            mkdir -p $out/share/turboflakes-monitor $out/bin
-            cp -r src deps.edn $out/share/turboflakes-monitor/
-            
-            cat > $out/bin/turboflakes-monitor <<EOF
-            #!${pkgs.bash}/bin/bash
-            cd $out/share/turboflakes-monitor
-            exec ${pkgs.clojure}/bin/clojure -M -m turboflakes-monitor.core "\$@"
-            EOF
-            chmod +x $out/bin/turboflakes-monitor
-          '';
-        };
+        turboflakes-monitor = pkgs.callPackage ./default.nix { };
       in
       {
         packages.default = turboflakes-monitor;
@@ -143,15 +124,9 @@
                 after = [ "network-online.target" ];
                 wants = [ "network-online.target" ];
 
-                environment = {
-                  API_ENDPOINT = buildApiEndpoint validatorCfg;
-                  METRICS_PORT = toString validatorCfg.port;
-                  SCRAPE_INTERVAL = toString validatorCfg.scrapeInterval;
-                };
-
                 serviceConfig = {
                   Type = "simple";
-                  ExecStart = "${cfg.package}/bin/turboflakes-monitor";
+                  ExecStart = "${cfg.package}/bin/turboflakes-monitor --endpoint ${buildApiEndpoint validatorCfg} --port ${toString validatorCfg.port} --interval ${toString validatorCfg.scrapeInterval}";
                   Restart = "always";
                   RestartSec = "10s";
 
