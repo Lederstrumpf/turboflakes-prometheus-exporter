@@ -64,17 +64,72 @@
           (+ base-value 0.5)
           base-value)))))
 
+(defn score-to-grade [score]
+  (cond
+    (>= score 9901) "A+"
+    (>= score 9501) "A"
+    (>= score 9001) "B+"
+    (>= score 8001) "B"
+    (>= score 7001) "C+"
+    (>= score 6001) "C"
+    (>= score 5001) "D+"
+    (>= score 4001) "D"
+    :else "F"))
+
+(defn compute-grade-metrics [data]
+  (let [para-stats (:para_stats data)
+        bitfields (get-in data [:para :bitfields])
+        totals (reduce (fn [acc [_ stats]]
+                         (-> acc
+                             (update :ev + (or (:ev stats) 0))
+                             (update :iv + (or (:iv stats) 0))
+                             (update :mv + (or (:mv stats) 0))))
+                       {:ev 0 :iv 0 :mv 0}
+                       para-stats)
+        total-votes (+ (:ev totals) (:iv totals) (:mv totals))
+        mvr (if (pos? total-votes)
+              (/ (double (:mv totals)) total-votes)
+              0.0)
+        ba (or (:ba bitfields) 0)
+        bu (or (:bu bitfields) 0)
+        total-bitfields (+ ba bu)
+        bur (if (pos? total-bitfields)
+              (/ (double bu) total-bitfields)
+              0.0)
+        score (Math/round (* (- 1.0 (+ (* mvr 0.75) (* bur 0.25))) 10000.0))
+        grade-str (score-to-grade score)]
+    {:explicit_votes_total (:ev totals)
+     :implicit_votes_total (:iv totals)
+     :missed_votes_total (:mv totals)
+     :mvr mvr
+     :grade grade-str}))
+
+(defn flatten-json
+  ([m] (flatten-json "" m))
+  ([prefix m]
+   (mapcat (fn [[k v]]
+             (let [key-str (if (empty? prefix)
+                             (name k)
+                             (str prefix "_" (name k)))]
+               (cond
+                 (= k :para_stats) nil
+                 (= k :address) nil
+                 (map? v) (flatten-json key-str v)
+                 :else [[key-str v]])))
+           m)))
+
 (defn generate-metrics []
   (let [data @metrics
         scrape-duration (- (/ (System/currentTimeMillis) 1000) @last-scrape)
         uptime (/ (- (System/currentTimeMillis) start-time) 1000)
         lines (transient [])]
 
-    ;; Extract string values as labels (except grade)
+    ;; Extract top-level string values as labels (except grade and address)
     (let [string-labels (into {}
                               (comp
                                (filter (fn [[k v]] (and (string? v)
-                                                        (not= k :grade))))
+                                                        (not= k :grade)
+                                                        (not= k :address))))
                                (map (fn [[k v]] [(name k) (escape-label-value v)])))
                               data)
           base-labels (str "endpoint=\"" (escape-label-value @api-endpoint) "\"")
@@ -86,16 +141,12 @@
                                            string-labels)))
                        base-labels)]
 
-      ;; RAW JSON KEYS → METRICS (NUMERIC VALUES ONLY)
-      (doseq [[k v] data]
-        (let [metric-name (json-key-to-metric-name k)]
+      (doseq [[key-str v] (flatten-json data)]
+        (let [metric-name (str "turboflakes_" key-str)]
           (cond
-            (and (= k :grade) (string? v))
+            (and (= key-str "grade") (string? v))
             (when-let [numeric-grade (grade-to-numeric v)]
               (conj! lines (str metric-name "{" all-labels "} " numeric-grade "\n")))
-
-            (= k :address)
-            nil  ; Skip address field entirely
 
             (number? v)
             (conj! lines (str metric-name "{" all-labels "} " v "\n"))
@@ -108,6 +159,19 @@
 
             (vector? v)
             (conj! lines (str metric-name "_count{" all-labels "} " (count v) "\n")))))
+
+      ;; Computed metrics from para_stats (live session data)
+      (when (:para_stats data)
+        (let [computed (compute-grade-metrics data)]
+          (doseq [[k v] computed]
+            (let [metric-name (str "turboflakes_" (name k))]
+              (cond
+                (and (= k :grade) (string? v))
+                (when-let [numeric-grade (grade-to-numeric v)]
+                  (conj! lines (str metric-name "{" all-labels "} " numeric-grade "\n")))
+
+                (number? v)
+                (conj! lines (str metric-name "{" all-labels "} " v "\n")))))))
 
       ;; Scrape info
       (conj! lines (str "turboflakes_monitor_scrape_duration_seconds{" all-labels "} " (format "%.3f" (double scrape-duration)) "\n"))

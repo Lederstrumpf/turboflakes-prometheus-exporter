@@ -42,7 +42,7 @@
         address = "CustomAddress";
         port = 8094;
         network = "polkadot";
-        apiEndpoint = "https://custom-api.example.com/api/v1/validators/CustomAddress/grade";
+        apiEndpoint = "https://custom-api.example.com/api/v1/validators/CustomAddress?session=current&show_stats=true";
       };
     };
   };

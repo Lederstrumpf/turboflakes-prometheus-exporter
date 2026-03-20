@@ -84,7 +84,7 @@
             if validatorCfg.apiEndpoint != null then
               validatorCfg.apiEndpoint
             else
-              "https://${validatorCfg.network}-onet-api.turboflakes.io/api/v1/validators/${validatorCfg.address}/grade";
+              "https://${validatorCfg.network}-onet-api.turboflakes.io/api/v1/validators/${validatorCfg.address}?session=current&show_stats=true";
         in
         {
           options.services.turboflakes-monitor = {
