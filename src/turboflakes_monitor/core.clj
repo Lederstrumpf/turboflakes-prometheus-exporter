@@ -162,8 +162,8 @@
             (vector? v)
             (conj! lines (str metric-name "_count{" all-labels "} " (count v) "\n")))))
 
-      ;; Computed metrics from para_stats (live session data)
-      (when (:para_stats data)
+      ;; Computed metrics from live session data (only when is_para=true)
+      (when (:is_para data)
         (let [computed (compute-grade-metrics data)]
           (doseq [[k v] computed]
             (let [metric-name (str "turboflakes_" (name k))]
