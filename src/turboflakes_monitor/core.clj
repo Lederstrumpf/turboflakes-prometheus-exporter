@@ -102,6 +102,8 @@
      :implicit_votes_total (:iv totals)
      :missed_votes_total (:mv totals)
      :mvr mvr
+     :bur bur
+     :score score
      :grade grade-str}))
 
 (defn flatten-json
